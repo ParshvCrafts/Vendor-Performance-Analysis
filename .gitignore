@@ -1,0 +1,31 @@
+# Secrets - never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+serviceAccount*.json
+
+# Source data (sales.csv alone is 1.5GB; GitHub caps files at 100MB)
+data/
+*.csv
+!sample_*.csv
+
+# Logs
+logs/
+log/
+*.log
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
