@@ -7,14 +7,16 @@
 credentials.json
 serviceAccount*.json
 
-# Source data (sales.csv alone is 1.5GB; GitHub caps files at 100MB)
-data/
+# Data: raw extracts are ~1.9GB (sales.csv alone 1.5GB; GitHub caps files at 100MB).
+# Only the small files in data/sample/ are committed.
+data/raw/
+data/processed/
 *.csv
-!sample_*.csv
+!data/sample/*.csv
 
-# Logs
+# Local-only: pre-sanitization drafts (contain a plaintext password) and run logs
+archive/
 logs/
-log/
 *.log
 
 # Python
@@ -22,6 +24,7 @@ venv/
 .venv/
 __pycache__/
 *.py[cod]
+.pytest_cache/
 .ipynb_checkpoints/
 
 # OS / editor
