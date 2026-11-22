@@ -32,3 +32,6 @@ __pycache__/
 Thumbs.db
 .vscode/
 .idea/
+
+# Notebook verification runs
+notebooks/_verify_run*.ipynb

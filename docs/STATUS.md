@@ -1,47 +1,64 @@
 # Project status
 
 Single source of truth for what works, what doesn't, and what's next. Update in place.
-Last audit: 2026-11-21.
+Last audit: 2026-11-22.
 
 ## Features
 
 | Feature | Status | Where | Evidence |
 | :--- | :--- | :--- | :--- |
-| CSV -> MySQL loader | **Verified** | `src/ingest_db.py` | Unit tests (`pytest`); 2026-11-21 real run of the current code against a throwaway MySQL 8.0.43 (5k-row sample of each CSV: 6 tables, blanks stored as NULL, failing file -> exit 1). Full 15.6M-row load last ran on 2025-08-18 with the *previous* version (91.9 min); current version not yet timed on full data. |
-| Vendor summary SQL (CTE query) | Verified (2025-08) | notebook, "optimized query" cell | Executed output: 10,692 rows in 0.74 min |
-| EDA, metrics, statistics | Verified (2025-08) | notebook | Executed outputs in the notebook |
-| Notebook re-runnable from a clean clone | **Unverified** | notebook | Paths/credentials repaired 2026-11-21 (see decisions) but not re-executed end to end: needs a loaded DB |
-| Power BI dashboard | **Planned, not started** | none | Notebook exports `data/processed/*.csv` "to use in Power BI"; no `.pbix` exists |
+| CSV -> MySQL loader | **Verified** | `src/ingest_db.py` | Unit tests (`pytest`); 2026-11-21 real run against a throwaway MySQL 8.0.43 (5k-row sample per CSV: 6 tables, blanks -> NULL, bad file -> exit 1). Full 15.6M-row load last ran 2025-08-18 with the *previous* version (91.9 min); current version not timed on full data. |
+| Notebook (EDA, summary SQL, metrics, statistics) | **Verified 2026-11-22** | `notebooks/` | Executed top to bottom against the local `vender` DB with zero errors (slow-query demo cell skipped). Reproduced: $3.71M unsold capital, t = -17.644, CIs 30.74-31.61 / 40.48-42.62. Committed outputs are still from the Aug 2025 run. |
+| Power BI dashboard | **Exists, not re-verified** | `dashboard/Vendor Performance Dashboard.pbix` | Built Aug 2025 by the owner; 1 page: 5 KPI cards, top-10 purchase donut, top vendors/brands bars, low-turnover funnel, low-performing brands scatter. Not opened here (Power BI Desktop not installed). |
 
 ## Decisions
 
-- 2026-11-21: Canonical loader is `src/ingest_db.py`; the notebook's copy of it was removed (it had a
-  syntax error and `!pip install logging`, which installs an unrelated Python 2 package). The original
-  run output is summarized in the notebook's "Loading the CSVs" cell.
-- 2026-11-21: Integer columns are created as BIGINT (was INT) to avoid overflow.
-- 2026-11-21: README claims corrected to match the notebook: the speedup came from CTE
-  pre-aggregation (no indexes were created); $3.71M is total unsold capital across all vendors;
-  the dashboard is planned, not delivered.
+- 2026-11-21: Canonical loader is `src/ingest_db.py`; the notebook's broken copy was removed.
+- 2026-11-21: Integer columns are BIGINT (was INT) to avoid overflow.
+- 2026-11-21: README claims corrected where they contradicted notebook output (speedup came from
+  CTE pre-aggregation, not indexes; $3.71M is unsold capital across all vendors).
+- 2026-11-22: Ratios that divide by zero (178 zero-sales rows) are stored as NULL, not +/-inf:
+  current mysql-connector rejects inf. Analysis filters `ProfitMargin > 0`, so results are unchanged.
+- 2026-11-22: Notebook read connections use `autocommit=True`; otherwise reading
+  `vendor_sales_summary` after `to_sql(if_exists="replace")` fails with MySQL error 1412.
 
 ## Known issues / tech debt
 
-- Loader reads each CSV fully into memory (`sales.csv` ~1.5 GB on disk, several GB in pandas). Fine
-  on the original machine; a chunked reader would need schema inference from a sample.
-- VARCHAR sizes are inferred from current data, so a later, longer value would be truncated or fail.
-- Dates are stored as VARCHAR (pandas reads them as strings). The notebook's SQL does not depend on
-  date types.
+- **Query timing:** the optimized summary query measured 44 s in Aug 2025 but ~181 s on two warm
+  re-runs on 2026-11-22. MySQL's `innodb_buffer_pool_size` is the 128 MB default vs a 2.1 GB `sales`
+  table, so the query is disk-bound. Raising it (e.g. 4G in `C:\ProgramData\MySQL\MySQL Server 8.0\my.ini`,
+  needs admin) would likely help; not tried.
+- **Dashboard:** KPI card uses `Sum(ProfitMargin)`, which adds up per-row percentages (should
+  probably be Average or SUM(GrossProfit)/SUM(TotalSalesDollars)); the brands bar chart is titled
+  "Top Vendors by Sales"; its CSV sources moved from the repo root to `data/processed/`, so Refresh
+  needs the source paths updated. All unconfirmed until opened in Power BI Desktop.
+- Loader reads each CSV fully into memory; VARCHAR sizes are inferred from current data; dates are
+  stored as VARCHAR.
 - Notebook markdown says Diageo sold "68 million units"; the figure is sales **dollars**.
-- Local DB on the owner's machine is named `vender` (set in local `.env`); public default is `vendor`.
+- `target` DB (another project) contains an empty `vendor_sales_summary` table created by an old
+  version of this notebook. Safe to drop; left in place.
+
+## Runbook
+
+- Start MySQL (service `MySQL80` is Manual start, needs admin): `Start-Service MySQL80` in an admin
+  PowerShell. Local DB is `vender` (already loaded; no need to re-ingest).
+- Execute the notebook headless (Windows Store Python leaks its global Jupyter into the venv, so the
+  venv kernel must be registered and found via `JUPYTER_PATH`):
+  `venv\Scripts\python -m ipykernel install --sys-prefix --name vendor-venv`, then from `notebooks/`
+  with `JUPYTER_PATH=..\venv\share\jupyter`:
+  `..\venv\Scripts\python -m jupyter nbconvert --to notebook --execute --ExecutePreprocessor.kernel_name=vendor-venv --output _verify_run_out.ipynb <copy>.ipynb`.
+  Run a copy with the slow-query cell (the one whose saved output is KeyboardInterrupt) blanked.
 
 ## Next steps (ranked)
 
-1. Re-run the notebook top to bottom against the loaded DB to confirm the path/credential fixes.
-2. Time a full ingest with the new loader (the old one took 91.9 min).
-3. Build the Power BI dashboard from `data/processed/` if still wanted; add a screenshot to the README.
-4. Fix the "68 million units" wording; optionally add 2-3 key charts to the README.
+1. Owner: open the dashboard, repoint sources to `data/processed/`, check the two visual issues
+   above, export a screenshot to `docs/images/dashboard.png` and add it to the README.
+2. Decide how to present the query timing (see Known issues).
+3. Time a full ingest with the new loader (old one: 91.9 min). Use a different `MYSQL_DATABASE`
+   to avoid dropping `vender`.
+4. Fix the "68 million units" wording.
 
 ## Local-only material (gitignored)
 
-- `archive/`: original drafts kept for history. They contain a plaintext MySQL password, so they
-  must never be committed. `draft_v1_*` is an abandoned first notebook (subset of the current one).
-- `logs/ingest_db_2025-08-18.log`: log of the original full load.
+- `archive/`: original drafts (contain a plaintext MySQL password; never commit).
+- `logs/`: `ingest_db_2025-08-18.log` (original full load), `verify_run.txt` (latest notebook run).
